@@ -104,7 +104,7 @@ class StochasticModel(object):
                 # Extract and clean line words
                 line_word = re.split(' |\t', line)
                 line_word = [x.strip() for x in line_word]
-                line_word = filter(None, line_word)
+                line_word = list(filter(None, line_word))
 
                 if line_word:
                     if line_word[0] == 'ROWS':
@@ -132,7 +132,7 @@ class StochasticModel(object):
                 # Extract and clean line words
                 line_word = re.split(' |\t', line)
                 line_word = [x.strip() for x in line_word]
-                line_word = filter(None, line_word)
+                line_word = list(filter(None, line_word))
 
                 if line_word[0] in ['TIME','PERIODS','ENDATA']:
                     pass  # just padding lines
@@ -233,7 +233,7 @@ class StochasticModel(object):
                 # Extract and clean line words
                 line_word = re.split(' |\t', line)  # split by whitespace or tab
                 line_word = [x.strip() for x in line_word]  # remove "\n" etc.
-                line_word = filter(None, line_word)  # remove empty elements in the line_word list
+                line_word = list(filter(None, line_word))  # remove empty elements in the line_word list
 
                 # parse to see if it's a section header
                 if line_word[0] == '*':
@@ -284,7 +284,7 @@ class StochasticModel(object):
 
         self.scenarios[scenario_id] = Scenario(scenario_id, parent, probability, branch_period, self)
 
-    def generate_deterministic_equivalent(self):
+    def generate_deterministic_equivalent(self, scenarios):
 
         print('Generating deterministic equivalent for the model {}...'.format(self.nominal_model.ModelName))
         deterministic_equivalent = gb.Model('Deterministic Equivalent')
@@ -317,11 +317,13 @@ class StochasticModel(object):
                                                name='stage1_row{}'.format(row))
 
         # second stage constraints
-        for scn in self.scenarios:
+        for scn in scenarios:
             # Contribution to lhs from A[1,1]
             lhs_1 = defaultdict(gb.LinExpr)
 
-            for entry in self.scenarios[scn].A[2,1].items():
+            scno = self.scenarios[scn]
+
+            for entry in scno.A[2,1].items():
                 row, column = entry[0]
                 value = entry[1]
                 lhs_1[row] = lhs_1[row] + value*x[1,'ROOT'][column]
@@ -333,14 +335,14 @@ class StochasticModel(object):
             if (2,scn) not in x.keys():
                 x[2,scn] = {}
             for i in range(len(self.c[2])):
-                x[2,scn][i] = deterministic_equivalent.addVar(obj=self.scenarios[scn].c[2][i]*self.scenarios[scn].probability,
-                                                              lb=self.scenarios[scn].lb[2][i],
-                                                              ub=self.scenarios[scn].ub[2][i],
-                                                              vtype=self.scenarios[scn].vtype[2][i],
+                x[2,scn][i] = deterministic_equivalent.addVar(obj=scno.c[2][i]*scno.probability,
+                                                              lb=scno.lb[2][i],
+                                                              ub=scno.ub[2][i],
+                                                              vtype=scno.vtype[2][i],
                                                               name='x_stage{}_node{}_i{}'.format(2,scn,i))
             deterministic_equivalent.update()
 
-            for entry in self.scenarios[scn].A[2,2].items():
+            for entry in scno.A[2,2].items():
                 row, column = entry[0]
                 value = entry[1]
                 lhs_2[row] = lhs_2[row] + value*x[2,scn][column]
@@ -348,8 +350,8 @@ class StochasticModel(object):
             # add constraints to stochastic model
             for row, value in enumerate(self.b[2]):
                 deterministic_equivalent.addConstr(lhs_1[row] + lhs_2[row],
-                                                   self.scenarios[scn].b_sense[2][row],
-                                                   self.scenarios[scn].b[2][row],
+                                                   scno.b_sense[2][row],
+                                                   scno.b[2][row],
                                                    name='stage2_sc{}_row{}'.format(scn,row))
             deterministic_equivalent.update()
 
@@ -433,7 +435,7 @@ class Scenario(object):
             # the remainder of data_modification is carried over while parsing the sto. file in
             # StochasticModel._parse_stochastic_information, through usage of the self.add_data_modification method
 
-        # figure out genealogy (i.e., sequence of nodes in the tree)
+        # figure out genealogy (i.e., sequence of nnodes in the tree)
         if self.parent == 'ROOT':
             # if our parent is root, then the entire tree branch is our own!
             self.genealogy = [self.scenario_id for x in range(len(stochastic_model.periods))]
@@ -476,7 +478,7 @@ class Scenario(object):
             # Check if it's a RHS modification
             if col_label == 'RHS':
                 # find stage i of the modification
-                i = (key for key,value in self.stochastic_model.stage_constrs.items() if row_label in value).next()
+                i = next(key for key,value in self.stochastic_model.stage_constrs.items() if row_label in value)
                 local_row = self.stochastic_model.stage_constrs[i].index(row_label)
                 if self.stochastic_model.mode_of_modification == 'REPLACE':
                     self._b[i][local_row] = value
@@ -487,7 +489,7 @@ class Scenario(object):
             # Then check if it's a modification in the objective vector
             elif row_label == self.stochastic_model.objective_name:
                 # find stage i of the modification
-                i = (key for key,value in self.stochastic_model.stage_vars.items() if col_label in value).next()
+                i = next(key for key,value in self.stochastic_model.stage_vars.items() if col_label in value)
                 local_col = self.stochastic_model.stage_vars[i].index(col_label)
                 if self.stochastic_model.mode_of_modification == 'REPLACE':
                     self._c[i][local_col] = value
@@ -500,8 +502,8 @@ class Scenario(object):
                 try:
                     # We have to figure out which (i,j) we have to query from A[i,j] to extract the appropriate
                     # sub matrix to modify
-                    i = (key for key,value in self.stochastic_model.stage_constrs.items() if row_label in value).next()
-                    j = (key for key,value in self.stochastic_model.stage_vars.items() if col_label in value).next()
+                    i = next(key for key,value in self.stochastic_model.stage_constrs.items() if row_label in value)
+                    j = next(key for key,value in self.stochastic_model.stage_vars.items() if col_label in value)
                 except StopIteration:
                     print('The .sto file is inconsistent with the .cor file: the given label for the row or column \n' \
                           'at which the scenario modification should take place is not in the list of labels \n' \
