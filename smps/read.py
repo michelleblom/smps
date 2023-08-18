@@ -284,16 +284,16 @@ class StochasticModel(object):
 
         self.scenarios[scenario_id] = Scenario(scenario_id, parent, probability, branch_period, self)
 
-    def generate_deterministic_equivalent(self, scenarios):
+    def generate_deterministic_equivalent(self, scenario_sbset):
 
         print('Generating deterministic equivalent for the model {}...'.format(self.nominal_model.ModelName))
         deterministic_equivalent = gb.Model('Deterministic Equivalent')
-
         #####################
         # TWO STAGE VERSION #
         #####################
 
         x = {}  # x[stage,'NODE']
+        first_stage_vars = []
         # generate first-stage variables
         for i in range(len(self.c[1])):
             if (1,'ROOT') not in x.keys():
@@ -303,6 +303,8 @@ class StochasticModel(object):
                                                              ub=self.ub[1][i],
                                                              vtype=self.vtype[1][i],
                                                              name='x_t{}_n{}_i{}'.format(1,'ROOT',i))
+            first_stage_vars.append('x_t{}_n{}_i{}'.format(1,'ROOT',i))
+
         deterministic_equivalent.update()
 
         # first stage constraints
@@ -317,10 +319,9 @@ class StochasticModel(object):
                                                name='stage1_row{}'.format(row))
 
         # second stage constraints
-        for scn in scenarios:
+        for scn in scenario_sbset:
             # Contribution to lhs from A[1,1]
             lhs_1 = defaultdict(gb.LinExpr)
-
             scno = self.scenarios[scn]
 
             for entry in scno.A[2,1].items():
@@ -358,7 +359,7 @@ class StochasticModel(object):
         # Set objective to minimize or maximize
         deterministic_equivalent.modelSense = self.nominal_model.modelSense
 
-        return deterministic_equivalent
+        return deterministic_equivalent, first_stage_vars
 
     def plot_scenario_tree(self):
         G = nx.DiGraph()
