@@ -286,7 +286,7 @@ class StochasticModel(object):
 
     def generate_deterministic_equivalent(self, scenario_sbset):
 
-        print('Generating deterministic equivalent for the model {}...'.format(self.nominal_model.ModelName))
+        #print('Generating deterministic equivalent for the model {}...'.format(self.nominal_model.ModelName))
         deterministic_equivalent = gb.Model('Deterministic Equivalent')
         #####################
         # TWO STAGE VERSION #
@@ -318,6 +318,10 @@ class StochasticModel(object):
             deterministic_equivalent.addConstr(lhs[row], self.b_sense[1][row], self.b[1][row],
                                                name='stage1_row{}'.format(row))
 
+        scpr = 0
+        for scn in scenario_sbset:
+            scpr += self.scenarios[scn].probability
+
         # second stage constraints
         for scn in scenario_sbset:
             # Contribution to lhs from A[1,1]
@@ -336,7 +340,7 @@ class StochasticModel(object):
             if (2,scn) not in x.keys():
                 x[2,scn] = {}
             for i in range(len(self.c[2])):
-                x[2,scn][i] = deterministic_equivalent.addVar(obj=scno.c[2][i]*scno.probability,
+                x[2,scn][i] = deterministic_equivalent.addVar(obj=scno.c[2][i]*(scno.probability/scpr),
                                                               lb=scno.lb[2][i],
                                                               ub=scno.ub[2][i],
                                                               vtype=scno.vtype[2][i],
